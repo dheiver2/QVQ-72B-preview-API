@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { InferenceClient } from 'huggingface-hub';
+import { HfInference } from '@huggingface/inference';
 import rateLimit from 'express-rate-limit';
 
 dotenv.config();
@@ -20,9 +20,7 @@ app.use(express.json());
 app.use(limiter);
 
 // Initialize Hugging Face client
-const client = new InferenceClient({
-    apiKey: process.env.HUGGINGFACE_API_KEY
-});
+const hf = new HfInference(process.env.HUGGINGFACE_API_KEY);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -57,13 +55,18 @@ app.post('/api/chat', async (req, res) => {
             ]
         }];
 
-        const completion = await client.chat.completions.create({
+        const response = await hf.textGenerationStream({
             model: "Qwen/QVQ-72B-Preview",
-            messages: messages,
-            max_tokens: 500
+            inputs: messages,
+            parameters: {
+                max_new_tokens: 500,
+                temperature: 0.7
+            }
         });
 
-        res.json(completion.choices[0].message);
+        res.json({
+            response: response
+        });
 
     } catch (error) {
         console.error('Error:', error);

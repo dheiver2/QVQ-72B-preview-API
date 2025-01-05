@@ -34,12 +34,19 @@ app.get('/health', (req, res) => {
 app.post('/api/chat', async (req, res) => {
     try {
         const { message, image_url } = req.body;
-
+        
         if (!message) {
             return res.status(400).json({
                 error: 'Message is required'
             });
         }
+
+        // Log da requisição para debug
+        console.log('Received request:', {
+            message,
+            image_url,
+            timestamp: new Date().toISOString()
+        });
 
         const messages = [{
             role: "user",
@@ -55,39 +62,60 @@ app.post('/api/chat', async (req, res) => {
             ]
         }];
 
-        const response = await hf.textGenerationStream({
+        // Chamada à API do Hugging Face
+        const generated = await hf.textGeneration({
             model: "Qwen/QVQ-72B-Preview",
-            inputs: messages,
+            inputs: JSON.stringify(messages),
             parameters: {
                 max_new_tokens: 500,
-                temperature: 0.7
+                temperature: 0.7,
+                return_full_text: true
             }
         });
 
+        // Log da resposta para debug
+        console.log('HF Response:', generated);
+
+        // Retorna a resposta estruturada
         res.json({
-            response: response
+            response: {
+                message: generated.generated_text,
+                model: "Qwen/QVQ-72B-Preview",
+                timestamp: new Date().toISOString()
+            }
         });
 
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        });
+
         res.status(500).json({
             error: 'Error processing request',
-            details: error.message
+            details: error.message,
+            timestamp: new Date().toISOString()
         });
     }
 });
 
 // Error handling
 app.use((err, req, res, next) => {
-    console.error(err.stack);
+    console.error('Global error handler:', {
+        error: err.stack,
+        timestamp: new Date().toISOString()
+    });
+
     res.status(500).json({
         error: 'Something went wrong!',
-        details: err.message
+        details: err.message,
+        timestamp: new Date().toISOString()
     });
 });
 
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT} - ${new Date().toISOString()}`);
 });

@@ -16,7 +16,7 @@ const limiter = rateLimit({
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));  // Aumentado limite do body
 app.use(limiter);
 
 // Initialize Hugging Face client
@@ -35,9 +35,11 @@ app.post('/api/chat', async (req, res) => {
     try {
         const { message, image_url } = req.body;
         
-        if (!message) {
+        // Validação da mensagem
+        if (!message || typeof message !== 'string') {
             return res.status(400).json({
-                error: 'Message is required'
+                error: 'Message is required and must be a string',
+                timestamp: new Date().toISOString()
             });
         }
 
@@ -48,33 +50,47 @@ app.post('/api/chat', async (req, res) => {
             timestamp: new Date().toISOString()
         });
 
-        const messages = [{
+        // Prepara o conteúdo da mensagem
+        const content = [
+            {
+                type: "text",
+                text: message
+            }
+        ];
+
+        // Adiciona imagem se fornecida e válida
+        if (image_url && typeof image_url === 'string') {
+            content.push({
+                type: "image_url",
+                image_url: { url: image_url }
+            });
+        }
+
+        // Prepara os inputs para o modelo
+        const inputMessages = [{
             role: "user",
-            content: [
-                {
-                    type: "text",
-                    text: message
-                },
-                ...(image_url ? [{
-                    type: "image_url",
-                    image_url: { url: image_url }
-                }] : [])
-            ]
+            content: content
         }];
 
         // Chamada à API do Hugging Face
         const generated = await hf.textGeneration({
             model: "Qwen/QVQ-72B-Preview",
-            inputs: JSON.stringify(messages),
+            inputs: message,  // Enviando apenas a mensagem direta
             parameters: {
                 max_new_tokens: 500,
                 temperature: 0.7,
-                return_full_text: true
+                return_full_text: false,
+                do_sample: true
             }
         });
 
         // Log da resposta para debug
         console.log('HF Response:', generated);
+
+        // Verifica se a resposta contém o texto gerado
+        if (!generated || !generated.generated_text) {
+            throw new Error('No response generated from the model');
+        }
 
         // Retorna a resposta estruturada
         res.json({
@@ -86,13 +102,19 @@ app.post('/api/chat', async (req, res) => {
         });
 
     } catch (error) {
+        // Log detalhado do erro
         console.error('Error details:', {
             name: error.name,
             message: error.message,
-            stack: error.stack
+            stack: error.stack,
+            timestamp: new Date().toISOString()
         });
 
-        res.status(500).json({
+        // Determina o código de status apropriado
+        const statusCode = error.name === 'ValidationError' ? 400 : 500;
+
+        // Retorna erro estruturado
+        res.status(statusCode).json({
             error: 'Error processing request',
             details: error.message,
             timestamp: new Date().toISOString()
@@ -100,7 +122,7 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-// Error handling
+// Error handling para erros não capturados
 app.use((err, req, res, next) => {
     console.error('Global error handler:', {
         error: err.stack,
@@ -114,6 +136,7 @@ app.use((err, req, res, next) => {
     });
 });
 
+// Inicialização do servidor
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {

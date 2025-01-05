@@ -10,8 +10,8 @@ const app = express();
 
 // Rate limiting
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100 // limit each IP to 100 requests per windowMs
+    windowMs: 15 * 60 * 1000,
+    max: 100
 });
 
 // Middleware
@@ -34,32 +34,28 @@ app.get('/health', (req, res) => {
 
 // Chat endpoint
 app.post('/api/chat', async (req, res) => {
-    const { message, image_url } = req.body;
-
-    if (!message) {
-        return res.status(400).json({
-            error: 'Message is required'
-        });
-    }
-
     try {
-        const messages = [
-            {
-                role: "user",
-                content: [
-                    {
-                        type: "text",
-                        text: message
-                    },
-                    image_url ? {
-                        type: "image_url",
-                        image_url: {
-                            url: image_url
-                        }
-                    } : null
-                ].filter(Boolean)
-            }
-        ];
+        const { message, image_url } = req.body;
+
+        if (!message) {
+            return res.status(400).json({
+                error: 'Message is required'
+            });
+        }
+
+        const messages = [{
+            role: "user",
+            content: [
+                {
+                    type: "text",
+                    text: message
+                },
+                ...(image_url ? [{
+                    type: "image_url",
+                    image_url: { url: image_url }
+                }] : [])
+            ]
+        }];
 
         const completion = await client.chat.completions.create({
             model: "Qwen/QVQ-72B-Preview",
@@ -67,13 +63,10 @@ app.post('/api/chat', async (req, res) => {
             max_tokens: 500
         });
 
-        res.json({
-            response: completion.choices[0].message
-        });
+        res.json(completion.choices[0].message);
 
     } catch (error) {
-        console.error('Error calling Hugging Face API:', error);
-        
+        console.error('Error:', error);
         res.status(500).json({
             error: 'Error processing request',
             details: error.message
@@ -81,38 +74,7 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-// Chat history endpoint
-app.post('/api/chat/history', async (req, res) => {
-    const { messages } = req.body;
-
-    if (!Array.isArray(messages)) {
-        return res.status(400).json({
-            error: 'Messages must be an array'
-        });
-    }
-
-    try {
-        const completion = await client.chat.completions.create({
-            model: "Qwen/QVQ-72B-Preview",
-            messages: messages,
-            max_tokens: 500
-        });
-
-        res.json({
-            response: completion.choices[0].message
-        });
-
-    } catch (error) {
-        console.error('Error processing chat history:', error);
-        
-        res.status(500).json({
-            error: 'Error processing chat history',
-            details: error.message
-        });
-    }
-});
-
-// Error handling middleware
+// Error handling
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({
@@ -122,6 +84,7 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 10000;
+
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
